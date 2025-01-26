@@ -33,10 +33,10 @@ internal class MyWidgetProvider : AppWidgetProvider() {
     private fun scheduleUpdateWorker(context: Context) {
         val workManager = WorkManager.getInstance(context)
 
-        // Создаем периодическую задачу с интервалом 2 минуты (120 секунд)
+        // Создаем периодическую задачу с интервалом
         val updateWorkRequest = PeriodicWorkRequest.Builder(
             UpdateWorker::class.java,
-            2, TimeUnit.MINUTES
+            1, TimeUnit.MINUTES
         ).build()
 
         // Запускаем задачу с уникальным именем
@@ -68,6 +68,7 @@ internal class MyWidgetProvider : AppWidgetProvider() {
                 val rubPrice = formatRubPrice(poolData.data.attributes.base_token_price_usd, usdToRubRate)
                 val change = poolData.data.attributes.price_change_percentage.h24
                 val changeIcon = getChangeIcon(change)
+                val changeColor = getChangeColor(change) // Получаем цвет для стрелочки
                 val currentDateTime = getCurrentDateTime()
 
                 withContext(Dispatchers.Main) {
@@ -76,6 +77,7 @@ internal class MyWidgetProvider : AppWidgetProvider() {
                         setTextViewText(R.id.price, "$$usdPrice")
                         setTextViewText(R.id.price_rub, "$rubPrice ₽") // Форматируем рубли в нужный формат
                         setTextViewText(R.id.change, "$changeIcon $change%")
+                        setTextColor(R.id.change, changeColor) // Устанавливаем цвет для текста с изменением цены
                         setTextViewText(R.id.time, "Updated $currentDateTime")
                         setTextViewText(R.id.icon, "💩")
                     }
@@ -105,14 +107,14 @@ internal class MyWidgetProvider : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Назначаем PendingIntent на кнопку (смайлик какашки)
+        // Назначаем PendingIntent на кнопку
         views.setOnClickPendingIntent(R.id.icon, pendingIntent)
     }
 
     private fun formatUsdPrice(price: String): String {
         return try {
             val number = price.toDouble()
-            "%.2f".format(number) // Форматируем с тремя знаками после запятой
+            "%.2f".format(number)
         } catch (e: Exception) {
             "0.00"
         }
@@ -127,10 +129,9 @@ internal class MyWidgetProvider : AppWidgetProvider() {
             // Конвертируем цену из долларов в рубли
             val rubPrice = number * usdToRubRate
 
-            // Форматируем число с пятью знаками после запятой
             "%.3f".format(rubPrice)
         } catch (e: Exception) {
-            "0.000" // Возвращаем значение по умолчанию в случае ошибки
+            "0.000"
         }
     }
 
@@ -162,6 +163,19 @@ internal class MyWidgetProvider : AppWidgetProvider() {
             if (changeValue >= 0) "⬆" else "⬇"
         } catch (e: Exception) {
             "⬆"
+        }
+    }
+
+    private fun getChangeColor(change: String): Int {
+        return try {
+            val changeValue = change.toDouble()
+            if (changeValue >= 0) {
+                0xFF4CAF50.toInt() // Зелёный цвет
+            } else {
+                0xFFF44336.toInt() // Красный цвет
+            }
+        } catch (e: Exception) {
+            0xFFF44336.toInt() // Красный цвет по умолчанию в случае ошибки
         }
     }
 

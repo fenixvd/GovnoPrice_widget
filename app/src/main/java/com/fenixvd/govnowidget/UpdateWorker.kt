@@ -1,6 +1,6 @@
 package com.fenixvd.govnowidget
 
-import android.appwidget.AppWidgetManager // Добавьте этот импорт
+import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.widget.RemoteViews
@@ -53,18 +53,18 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     private fun formatUsdPrice(price: String): String {
         return try {
             val number = price.toDouble()
-            "%.3f".format(number)
+            "%.2f".format(number)
         } catch (e: Exception) {
-            "0.000"
+            "0.00"
         }
     }
 
     private fun formatRubPrice(price: String): String {
         return try {
             val number = price.toDouble()
-            "%.2f".format(number)
+            "%.3f".format(number)
         } catch (e: Exception) {
-            "0.00"
+            "0.000"
         }
     }
 
