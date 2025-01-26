@@ -33,7 +33,7 @@ internal class MyWidgetProvider : AppWidgetProvider() {
     private fun scheduleUpdateWorker(context: Context) {
         val workManager = WorkManager.getInstance(context)
 
-        // Создаем периодическую задачу с интервалом
+        // Создаем периодическую задачу с интервалом 1 минута
         val updateWorkRequest = PeriodicWorkRequest.Builder(
             UpdateWorker::class.java,
             1, TimeUnit.MINUTES
@@ -61,30 +61,39 @@ internal class MyWidgetProvider : AppWidgetProvider() {
 
     private fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         CoroutineScope(Dispatchers.IO).launch {
-            val poolData = NetworkUtils.fetchPoolData()
+            val poolData = NetworkUtils.fetchPoolData() // Парсим данные
             if (poolData != null) {
+                // Получаем курс USD
                 val usdPrice = formatUsdPrice(poolData.data.attributes.base_token_price_usd)
-                val usdToRubRate = fetchUsdToRubRate() // Получаем курс доллара к рублю
+
+                // Получаем курс рубля (или другой валюты)
+                val usdToRubRate = fetchUsdToRubRate() // Курс USD к RUB
                 val rubPrice = formatRubPrice(poolData.data.attributes.base_token_price_usd, usdToRubRate)
+
+                // Получаем изменение цены
                 val change = poolData.data.attributes.price_change_percentage.h24
                 val changeIcon = getChangeIcon(change)
-                val changeColor = getChangeColor(change) // Получаем цвет для стрелочки
+                val changeColor = getChangeColor(change)
+
+                // Получаем текущее время
                 val currentDateTime = getCurrentDateTime()
 
                 withContext(Dispatchers.Main) {
                     val views = RemoteViews(context.packageName, R.layout.widget_layout).apply {
-                        setTextViewText(R.id.ticker, "GOVNO")
-                        setTextViewText(R.id.price, "$$usdPrice")
-                        setTextViewText(R.id.price_rub, "$rubPrice ₽") // Форматируем рубли в нужный формат
-                        setTextViewText(R.id.change, "$changeIcon $change%")
-                        setTextColor(R.id.change, changeColor) // Устанавливаем цвет для текста с изменением цены
-                        setTextViewText(R.id.time, "Updated $currentDateTime")
-                        setTextViewText(R.id.icon, "💩")
+                        // Устанавливаем текст для виджета
+                        setTextViewText(R.id.ticker, "GOVNO") // Название тикера
+                        setTextViewText(R.id.price, "$$usdPrice") // Цена в USD
+                        setTextViewText(R.id.price_rub, "$rubPrice ₽") // Цена в RUB
+                        setTextViewText(R.id.change, "$changeIcon $change%") // Изменение цены
+                        setTextColor(R.id.change, changeColor) // Цвет изменения цены
+                        setTextViewText(R.id.time, "Updated $currentDateTime") // Время обновления
+                        setTextViewText(R.id.icon, "💩") // Иконка
                     }
 
                     // Настройка PendingIntent для кнопки обновления
                     setUpdateOnClick(context, views)
 
+                    // Обновляем виджет
                     appWidgetIds.forEach { widgetId ->
                         appWidgetManager.updateAppWidget(widgetId, views)
                     }
@@ -114,7 +123,7 @@ internal class MyWidgetProvider : AppWidgetProvider() {
     private fun formatUsdPrice(price: String): String {
         return try {
             val number = price.toDouble()
-            "%.2f".format(number)
+            "%.2f".format(number) //
         } catch (e: Exception) {
             "0.00"
         }
