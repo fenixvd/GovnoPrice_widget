@@ -1,8 +1,10 @@
 package com.fenixvd.govnowidget
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.google.gson.Gson
-import okhttp3.Dns
+import kotlinx.coroutines.*
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -12,6 +14,8 @@ import retrofit2.http.GET
 import retrofit2.Call
 import java.io.IOException
 import java.net.InetAddress
+import okhttp3.dnsoverhttps.DnsOverHttps
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 // Data classes
 data class PoolData(
@@ -41,6 +45,23 @@ interface GeckoApiService {
 // NetworkUtils object
 object NetworkUtils {
 
+    private val handler = Handler(Looper.getMainLooper())
+    private var isUpdating = false // Флаг для предотвращения множественных обновлений
+
+    // Bootstrap клиент для DnsOverHttps
+    private val bootstrapClient = OkHttpClient.Builder().build()
+
+    // Настройка DnsOverHttps
+    private val dnsOverHttps = DnsOverHttps.Builder()
+        .client(bootstrapClient)
+        .url("https://cloudflare-dns.com/dns-query".toHttpUrl())
+        .bootstrapDnsHosts(
+            InetAddress.getByName("1.1.1.1"), // Bootstrap DNS для Cloudflare
+            InetAddress.getByName("1.0.0.1")
+        )
+        .build()
+
+    // Настройка Retrofit
     private val retrofit: Retrofit by lazy {
         // User-Agent для запросов
         val userAgentInterceptor = Interceptor { chain ->
@@ -56,24 +77,11 @@ object NetworkUtils {
             level = HttpLoggingInterceptor.Level.BODY
         }
 
-        // Настройка DNS
-        val dns = object : Dns {
-            override fun lookup(hostname: String): List<InetAddress> {
-                return try {
-                    Log.d("NetworkUtils", "Attempting to resolve hostname: $hostname using system DNS")
-                    Dns.SYSTEM.lookup(hostname)
-                } catch (e: Exception) {
-                    Log.e("NetworkError", "DNS lookup failed for hostname: $hostname", e)
-                    throw IOException("DNS lookup failed for hostname: $hostname", e)
-                }
-            }
-        }
-
-        // Настройка OkHttpClient
+        // Настройка OkHttpClient с DnsOverHttps
         val client = OkHttpClient.Builder()
             .addInterceptor(userAgentInterceptor)
-            .addInterceptor(loggingInterceptor) // Добавляем логирование
-            .dns(dns) // Используем Google Public DNS
+            .addInterceptor(loggingInterceptor)
+            .dns(dnsOverHttps) // Используем DnsOverHttps
             .build()
 
         // Настройка Retrofit
@@ -88,25 +96,49 @@ object NetworkUtils {
         retrofit.create(GeckoApiService::class.java)
     }
 
-    // Функция для выполнения запроса
-    fun fetchPoolData(): PoolData? {
-        return try {
-            Log.d("NetworkUtils", "Starting request to API...")
-            val response = apiService.fetchPoolData().execute()
-            if (response.isSuccessful) {
-                val poolData = response.body()
-                Log.d("NetworkUtils", "Response received: ${Gson().toJson(poolData)}")
-                poolData
-            } else {
-                Log.e("NetworkError", "Request failed with code: ${response.code()}, message: ${response.message()}")
+    // Функция для выполнения запроса (асинхронная с корутинами)
+    suspend fun fetchPoolData(): PoolData? {
+        return withContext(Dispatchers.IO) { // Выполняем запрос в фоновом потоке
+            try {
+                Log.d("NetworkUtils", "Starting request to API...")
+                val response = apiService.fetchPoolData().execute()
+                if (response.isSuccessful) {
+                    val poolData = response.body()
+                    Log.d("NetworkUtils", "Response received: ${Gson().toJson(poolData)}")
+                    poolData
+                } else {
+                    Log.e("NetworkError", "Request failed with code: ${response.code()}, message: ${response.message()}")
+                    null
+                }
+            } catch (e: IOException) {
+                Log.e("NetworkError", "IO Exception: ${e.message}", e)
+                null
+            } catch (e: Exception) {
+                Log.e("NetworkError", "Unexpected error: ${e.message}", e)
                 null
             }
-        } catch (e: IOException) {
-            Log.e("NetworkError", "IO Exception: ${e.message}", e)
-            null
-        } catch (e: Exception) {
-            Log.e("NetworkError", "Unexpected error: ${e.message}", e)
-            null
         }
+    }
+
+    // Метод для запуска периодических обновлений
+    fun startPeriodicUpdates(onUpdate: () -> Unit) {
+        if (isUpdating) return // Предотвращаем множественные обновления
+        isUpdating = true
+
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                Log.d("NetworkUtils", "Executing periodic update")
+                CoroutineScope(Dispatchers.Main).launch {
+                    onUpdate.invoke() // Вызываем callback для обновления виджета
+                }
+                handler.postDelayed(this, 30_000) // Планируем следующее обновление
+            }
+        }, 30_000) // Первое обновление через 30 секунд
+    }
+
+    // Метод для остановки обновлений
+    fun stopPeriodicUpdates() {
+        handler.removeCallbacksAndMessages(null)
+        isUpdating = false
     }
 }
