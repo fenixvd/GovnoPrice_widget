@@ -2,7 +2,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:padding="16dp"
-    android:background="?attr/widget_background">
+    android:background="@color/widget_background">
 
     <TextView
         android:id="@+id/ticker"
@@ -11,7 +11,7 @@
         android:text="\$GOVNO"
         android:textSize="18sp"
         android:textStyle="bold"
-        android:textColor="?attr/text_color_primary" />
+        android:textColor="@color/text_color_primary" />
 
     <TextView
         android:id="@+id/price"
@@ -20,7 +20,7 @@
         android:layout_below="@id/ticker"
         android:text="$0.00"
         android:textSize="24sp"
-        android:textColor="?attr/text_color_primary" />
+        android:textColor="@color/text_color_primary" />
 
     <TextView
         android:id="@+id/price_rub"
@@ -29,7 +29,7 @@
         android:layout_below="@id/price"
         android:text="0.00 ₽"
         android:textSize="18sp"
-        android:textColor="?attr/text_color_secondary" />
+        android:textColor="@color/text_color_secondary" />
 
     <TextView
         android:id="@+id/change"
@@ -38,7 +38,7 @@
         android:layout_below="@id/price_rub"
         android:text="⬆ 0.00%"
         android:textSize="18sp"
-        android:textColor="?attr/text_color_positive" />
+        android:textColor="@color/text_color_positive" />
 
     <TextView
         android:id="@+id/time"
@@ -47,7 +47,7 @@
         android:layout_below="@id/change"
         android:text="00:00 01.01.2025"
         android:textSize="14sp"
-        android:textColor="?attr/text_color_time" />
+        android:textColor="@color/text_color_time" />
 
     <TextView
         android:id="@+id/icon"
@@ -57,5 +57,5 @@
         android:layout_alignParentRight="true"
         android:text="💩"
         android:textSize="24sp"
-        android:textColor="?attr/text_color_primary" />
+        android:textColor="@color/text_color_primary" />
 </RelativeLayout>

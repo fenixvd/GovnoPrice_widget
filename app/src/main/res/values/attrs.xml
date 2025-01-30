@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<declare-styleable name="WidgetTheme">
-    <attr name="widget_background" format="color" />
-    <attr name="text_color_primary" format="color" />
-    <attr name="text_color_secondary" format="color" />
-    <attr name="text_color_positive" format="color" />
-    <attr name="text_color_negative" format="color" />
-    <attr name="text_color_time" format="color" />
-</declare-styleable>

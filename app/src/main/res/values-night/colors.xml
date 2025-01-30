@@ -3,7 +3,7 @@
     <color name="widget_background">#121212</color>
     <color name="text_color_primary">#FFFFFF</color>
     <color name="text_color_secondary">#BBBBBB</color>
-    <color name="text_color_positive">#00FF00</color>
-    <color name="text_color_negative">#FF0000</color>
+    <color name="text_color_positive">#00C853</color>
+    <color name="text_color_negative">#D32F2F</color>
     <color name="text_color_time">#CCCCCC</color>
 </resources>

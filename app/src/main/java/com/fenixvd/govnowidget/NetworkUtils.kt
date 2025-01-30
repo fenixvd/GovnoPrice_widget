@@ -2,13 +2,16 @@ package com.fenixvd.govnowidget
 
 import android.util.Log
 import com.google.gson.Gson
+import okhttp3.Dns
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.Call
 import java.io.IOException
+import java.net.InetAddress
 
 // Data classes
 data class PoolData(
@@ -37,6 +40,7 @@ interface GeckoApiService {
 
 // NetworkUtils object
 object NetworkUtils {
+
     private val retrofit: Retrofit by lazy {
         // User-Agent для запросов
         val userAgentInterceptor = Interceptor { chain ->
@@ -47,9 +51,29 @@ object NetworkUtils {
             chain.proceed(newRequest)
         }
 
+        // Логирование запросов (для отладки)
+        val loggingInterceptor = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BODY
+        }
+
+        // Настройка DNS
+        val dns = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                return try {
+                    Log.d("NetworkUtils", "Attempting to resolve hostname: $hostname using system DNS")
+                    Dns.SYSTEM.lookup(hostname)
+                } catch (e: Exception) {
+                    Log.e("NetworkError", "DNS lookup failed for hostname: $hostname", e)
+                    throw IOException("DNS lookup failed for hostname: $hostname", e)
+                }
+            }
+        }
+
         // Настройка OkHttpClient
         val client = OkHttpClient.Builder()
             .addInterceptor(userAgentInterceptor)
+            .addInterceptor(loggingInterceptor) // Добавляем логирование
+            .dns(dns) // Используем Google Public DNS
             .build()
 
         // Настройка Retrofit
