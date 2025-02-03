@@ -1,23 +1,20 @@
 package com.fenixvd.govnowidget
 
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
-import com.google.gson.Gson
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import okhttp3.dnsoverhttps.DnsOverHttps
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
-import retrofit2.Call
 import java.io.IOException
 import java.net.InetAddress
-import okhttp3.dnsoverhttps.DnsOverHttps
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
-// Data classes
+// Data class для API
 data class PoolData(
     val data: Data
 ) {
@@ -36,17 +33,13 @@ data class PoolData(
     }
 }
 
-// API interface
+// API интерфейс с suspend функцией
 interface GeckoApiService {
     @GET("api/v2/networks/ton/pools/EQAf2LUJZMdxSAGhlp-A60AN9bqZeVM994vCOXH05JFo-7dc")
-    fun fetchPoolData(): Call<PoolData>
+    suspend fun fetchPoolData(): PoolData?
 }
 
-// NetworkUtils object
 object NetworkUtils {
-
-    private val handler = Handler(Looper.getMainLooper())
-    private var isUpdating = false // Флаг для предотвращения множественных обновлений
 
     // Bootstrap клиент для DnsOverHttps
     private val bootstrapClient = OkHttpClient.Builder().build()
@@ -56,14 +49,13 @@ object NetworkUtils {
         .client(bootstrapClient)
         .url("https://cloudflare-dns.com/dns-query".toHttpUrl())
         .bootstrapDnsHosts(
-            InetAddress.getByName("1.1.1.1"), // Bootstrap DNS для Cloudflare
+            InetAddress.getByName("1.1.1.1"),
             InetAddress.getByName("1.0.0.1")
         )
         .build()
 
     // Настройка Retrofit
     private val retrofit: Retrofit by lazy {
-        // User-Agent для запросов
         val userAgentInterceptor = Interceptor { chain ->
             val originalRequest = chain.request()
             val newRequest = originalRequest.newBuilder()
@@ -72,19 +64,16 @@ object NetworkUtils {
             chain.proceed(newRequest)
         }
 
-        // Логирование запросов (для отладки)
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
         }
 
-        // Настройка OkHttpClient с DnsOverHttps
         val client = OkHttpClient.Builder()
             .addInterceptor(userAgentInterceptor)
             .addInterceptor(loggingInterceptor)
-            .dns(dnsOverHttps) // Используем DnsOverHttps
+            .dns(dnsOverHttps)
             .build()
 
-        // Настройка Retrofit
         Retrofit.Builder()
             .baseUrl("https://api.geckoterminal.com/")
             .addConverterFactory(GsonConverterFactory.create())
@@ -96,49 +85,51 @@ object NetworkUtils {
         retrofit.create(GeckoApiService::class.java)
     }
 
-    // Функция для выполнения запроса (асинхронная с корутинами)
+    // Функция получения данных из API
     suspend fun fetchPoolData(): PoolData? {
-        return withContext(Dispatchers.IO) { // Выполняем запрос в фоновом потоке
+        return withContext(Dispatchers.IO) {
             try {
-                Log.d("NetworkUtils", "Starting request to API...")
-                val response = apiService.fetchPoolData().execute()
-                if (response.isSuccessful) {
-                    val poolData = response.body()
-                    Log.d("NetworkUtils", "Response received: ${Gson().toJson(poolData)}")
-                    poolData
-                } else {
-                    Log.e("NetworkError", "Request failed with code: ${response.code()}, message: ${response.message()}")
-                    null
+                Log.d("NetworkUtils", "Запрос к API...")
+                val response = apiService.fetchPoolData() // Retrofit автоматически выполняет запрос
+                response?.also {
+                    Log.d("NetworkUtils", "Данные получены: ${it.data.attributes.base_token_price_usd}")
                 }
             } catch (e: IOException) {
-                Log.e("NetworkError", "IO Exception: ${e.message}", e)
+                Log.e("NetworkError", "Ошибка сети: ${e.message}", e)
                 null
             } catch (e: Exception) {
-                Log.e("NetworkError", "Unexpected error: ${e.message}", e)
+                Log.e("NetworkError", "Неизвестная ошибка: ${e.message}", e)
                 null
             }
         }
     }
 
-    // Метод для запуска периодических обновлений
-    fun startPeriodicUpdates(onUpdate: () -> Unit) {
-        if (isUpdating) return // Предотвращаем множественные обновления
-        isUpdating = true
-
-        handler.postDelayed(object : Runnable {
-            override fun run() {
-                Log.d("NetworkUtils", "Executing periodic update")
-                CoroutineScope(Dispatchers.Main).launch {
-                    onUpdate.invoke() // Вызываем callback для обновления виджета
+    // Функция получения курса USD к RUB
+    suspend fun fetchUsdToRubRate(): Double {
+        return withContext(Dispatchers.IO) {
+            try {
+                val client = OkHttpClient()
+                val request = okhttp3.Request.Builder()
+                    .url("https://www.cbr-xml-daily.ru/daily_json.js")
+                    .build()
+                val response = client.newCall(request).execute()
+                val responseBody = response.body?.string()
+                if (response.isSuccessful && !responseBody.isNullOrBlank()) {
+                    val json = org.json.JSONObject(responseBody)
+                    val usdRate = json.getJSONObject("Valute").getJSONObject("USD").getDouble("Value")
+                    Log.d("NetworkUtils", "USD to RUB rate fetched: $usdRate")
+                    usdRate
+                } else {
+                    Log.e("NetworkError", "Failed to fetch USD to RUB rate")
+                    97.0
                 }
-                handler.postDelayed(this, 30_000) // Планируем следующее обновление
+            } catch (e: IOException) {
+                Log.e("NetworkError", "Ошибка сети: ${e.message}", e)
+                97.0
+            } catch (e: Exception) {
+                Log.e("NetworkError", "Неизвестная ошибка: ${e.message}", e)
+                97.0
             }
-        }, 30_000) // Первое обновление через 30 секунд
-    }
-
-    // Метод для остановки обновлений
-    fun stopPeriodicUpdates() {
-        handler.removeCallbacksAndMessages(null)
-        isUpdating = false
+        }
     }
 }

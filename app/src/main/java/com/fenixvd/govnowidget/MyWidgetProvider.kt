@@ -1,9 +1,13 @@
 package com.fenixvd.govnowidget
 
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
-import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
@@ -13,6 +17,9 @@ import java.util.Date
 import java.util.Locale
 
 class MyWidgetProvider : AppWidgetProvider() {
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var updateRunnable: Runnable? = null
 
     override fun onUpdate(
         context: Context,
@@ -24,30 +31,32 @@ class MyWidgetProvider : AppWidgetProvider() {
 
         // Обновляем все экземпляры виджета
         appWidgetIds.forEach { appWidgetId ->
-            Log.d("MyWidgetProvider", "Calling updateWidget for appWidgetId: $appWidgetId")
             CoroutineScope(Dispatchers.Main).launch {
                 updateWidget(context, appWidgetManager, appWidgetId)
             }
         }
 
         // Запускаем периодические обновления
-        NetworkUtils.startPeriodicUpdates {
-            val ids = AppWidgetManager.getInstance(context).getAppWidgetIds(
-                ComponentName(context, MyWidgetProvider::class.java)
-            )
-            ids.forEach { appWidgetId ->
+        scheduleNextUpdate(context, appWidgetManager, appWidgetIds)
+    }
+
+    private fun scheduleNextUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
+        updateRunnable?.let { handler.removeCallbacks(it) }
+
+        updateRunnable = Runnable {
+            appWidgetIds.forEach { appWidgetId ->
                 CoroutineScope(Dispatchers.Main).launch {
                     updateWidget(context, appWidgetManager, appWidgetId)
                 }
             }
+            scheduleNextUpdate(context, appWidgetManager, appWidgetIds)
         }
-    }
 
-    override fun onDisabled(context: Context) {
-        super.onDisabled(context)
-        Log.d("MyWidgetProvider", "onDisabled called, stopping periodic updates")
-        // Останавливаем обновления, если виджет удалён
-        NetworkUtils.stopPeriodicUpdates()
+        handler.postDelayed(updateRunnable!!, 30_000)
     }
 
     private suspend fun updateWidget(
@@ -69,7 +78,7 @@ class MyWidgetProvider : AppWidgetProvider() {
         }
 
         val usdPrice = formatUsdPrice(poolData.data.attributes.base_token_price_usd)
-        val usdToRubRate = fetchUsdToRubRate()
+        val usdToRubRate = NetworkUtils.fetchUsdToRubRate()
         val rubPrice = formatRubPrice(poolData.data.attributes.base_token_price_usd, usdToRubRate)
         val change = poolData.data.attributes.price_change_percentage.h24
         val changeIcon = getChangeIcon(change)
@@ -84,10 +93,44 @@ class MyWidgetProvider : AppWidgetProvider() {
             setTextColor(R.id.change, changeColor)
             setTextViewText(R.id.time, "Updated $currentDateTime")
             setTextViewText(R.id.icon, "💩")
+
+            // Добавляем PendingIntent для обработки кликов по кнопке
+            val intent = Intent(context, MyWidgetProvider::class.java).apply {
+                action = "com.fenixvd.govnowidget.UPDATE_WIDGET"
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+            val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                appWidgetId, // Уникальный requestCode для каждого виджета
+                intent,
+                pendingIntentFlags
+            )
+            setOnClickPendingIntent(R.id.icon, pendingIntent)
         }
 
         appWidgetManager.updateAppWidget(appWidgetId, views)
         Log.d("MyWidgetProvider", "Widget updated successfully for appWidgetId: $appWidgetId")
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+
+        when (intent.action) {
+            "com.fenixvd.govnowidget.UPDATE_WIDGET" -> {
+                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                    Log.d("MyWidgetProvider", "Manual update triggered for appWidgetId: $appWidgetId")
+                    CoroutineScope(Dispatchers.Main).launch {
+                        updateWidget(context, AppWidgetManager.getInstance(context), appWidgetId)
+                    }
+                }
+            }
+        }
     }
 
     private fun formatUsdPrice(price: String): String {
@@ -109,31 +152,6 @@ class MyWidgetProvider : AppWidgetProvider() {
         } catch (e: Exception) {
             Log.e("MyWidgetProvider", "Error formatting RUB price: ${e.message}")
             "0.00"
-        }
-    }
-
-    private suspend fun fetchUsdToRubRate(): Double {
-        return withContext(Dispatchers.IO) {
-            try {
-                val client = okhttp3.OkHttpClient()
-                val request = okhttp3.Request.Builder()
-                    .url("https://www.cbr-xml-daily.ru/daily_json.js")
-                    .build()
-                val response = client.newCall(request).execute()
-                val responseBody = response.body?.string()
-                if (response.isSuccessful && !responseBody.isNullOrBlank()) {
-                    val json = org.json.JSONObject(responseBody)
-                    val usdRate = json.getJSONObject("Valute").getJSONObject("USD").getDouble("Value")
-                    Log.d("MyWidgetProvider", "USD to RUB rate fetched: $usdRate")
-                    usdRate
-                } else {
-                    Log.e("MyWidgetProvider", "Failed to fetch USD to RUB rate")
-                    98.0
-                }
-            } catch (e: Exception) {
-                Log.e("MyWidgetProvider", "Exception while fetching USD to RUB rate: ${e.message}")
-                98.0
-            }
         }
     }
 
@@ -164,5 +182,12 @@ class MyWidgetProvider : AppWidgetProvider() {
     private fun getCurrentDateTime(): String {
         val sdf = SimpleDateFormat("HH:mm dd.MM.yyyy", Locale.getDefault())
         return sdf.format(Date())
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        Log.d("MyWidgetProvider", "onDisabled called, stopping updates")
+        // Останавливаем обновления
+        updateRunnable?.let { handler.removeCallbacks(it) }
     }
 }
